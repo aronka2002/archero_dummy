@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Archero Shooter</title>
     <style>
+      canvas {
+        will-change: transform;
+        transform: translateZ(0);
+      }
+
       body {
         margin: 0;
         padding: 0;
@@ -261,8 +266,16 @@
         joystick.startX = x;
         joystick.startY = y;
 
-        joystickBase.style.left = `${x - 50}px`;
-        joystickBase.style.top = `${y - 50}px`;
+        const baseX = Math.max(
+          0,
+          Math.min(gameContainer.clientWidth - 100, x - 50)
+        );
+        const baseY = Math.max(
+          0,
+          Math.min(gameContainer.clientHeight - 100, y - 50)
+        );
+        joystickBase.style.left = `${baseX}px`;
+        joystickBase.style.top = `${baseY}px`;
         joystickBase.style.display = "block";
       });
 
@@ -607,17 +620,28 @@
       }
 
       function createParticles(x, y, color, count) {
+        if (window.innerWidth < 768) count = Math.floor(count * 0.3);
         for (let i = 0; i < count; i++) {
           particles.push(new Particle(x, y, color));
         }
       }
 
       function resizeCanvas() {
+        const scale = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
-        canvas.width = rect.width;
-        canvas.height = rect.height;
+
+        canvas.width = rect.width * scale;
+        canvas.height = rect.height * scale;
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset any existing transform
+        ctx.scale(scale, scale);
+
+        // Update player position to stay inside new bounds
+        player.x = Math.max(15, Math.min(canvas.width / scale - 15, player.x));
+        player.y = Math.max(15, Math.min(canvas.height / scale - 15, player.y));
       }
       window.addEventListener("resize", resizeCanvas);
+      window.addEventListener("orientationchange", resizeCanvas);
       resizeCanvas();
 
       function playSound(id) {
@@ -660,8 +684,11 @@
         player.y += moveY * player.speed;
 
         // Keep player in bounds
-        player.x = Math.max(15, Math.min(canvas.width - 15, player.x));
-        player.y = Math.max(15, Math.min(canvas.height - 15, player.y));
+        const boundsX = canvas.width / (window.devicePixelRatio || 1);
+        const boundsY = canvas.height / (window.devicePixelRatio || 1);
+
+        player.x = Math.max(15, Math.min(boundsX - 15, player.x));
+        player.y = Math.max(15, Math.min(boundsY - 15, player.y));
 
         // Auto-shoot at nearest enemy with multi-shot
         if (
@@ -898,6 +925,26 @@
         });
       }
 
+      let lastScore = -1,
+        lastLevel = -1,
+        lastEnemies = -1;
+      function updateUI() {
+        if (game.score !== lastScore) {
+          scoreEl.textContent = game.score;
+          lastScore = game.score;
+        }
+        if (game.level !== lastLevel) {
+          levelEl.textContent = game.level;
+          lastLevel = game.level;
+        }
+        if (enemies.length !== lastEnemies) {
+          enemiesEl.textContent = enemies.length;
+          lastEnemies = enemies.length;
+        }
+
+        healthFill.style.width = (player.health / player.maxHealth) * 100 + "%";
+      }
+
       function updateGame() {
         // Update power-up timers
         updatePowerUpTimers();
@@ -908,7 +955,8 @@
         }
 
         // Spawn power-ups occasionally
-        if (Math.random() < 0.003) {
+        let powerupcheckcount = window.innerWidth < 768 ? 0.001 : 0.003;
+        if (Math.random() < powerupcheckcount) {
           const x = Math.random() * (canvas.width - 100) + 50;
           const y = Math.random() * (canvas.height - 100) + 50;
           spawnPowerUp(x, y);
@@ -930,10 +978,11 @@
         }
 
         // Update UI
-        scoreEl.textContent = game.score;
-        levelEl.textContent = game.level;
-        enemiesEl.textContent = enemies.length;
-        healthFill.style.width = (player.health / player.maxHealth) * 100 + "%";
+        // scoreEl.textContent = game.score;
+        // levelEl.textContent = game.level;
+        // enemiesEl.textContent = enemies.length;
+        // healthFill.style.width = (player.health / player.maxHealth) * 100 + "%";
+        updateUI();
 
         // Check game over
         if (player.health <= 0) {
@@ -941,38 +990,34 @@
         }
       }
 
+      let frameCount = 0;
       function gameLoop() {
         if (!game.running) return;
 
-        // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Update
         updatePlayer();
         updateGame();
 
-        // Update enemies
-        enemies.forEach((enemy) => enemy.update());
+        // Only update heavy stuff every 2 frames on mobile
+        if (frameCount % 2 === 0 && window.innerWidth < 768) {
+          enemies.forEach((enemy) => enemy.update());
+          bullets = bullets.filter((bullet) => !bullet.update());
+          particles = particles.filter((p) => !p.update());
+        } else {
+          enemies.forEach((enemy) => enemy.update());
+          bullets = bullets.filter((bullet) => !bullet.update());
+          particles = particles.filter((p) => !p.update());
+        }
 
-        // Update bullets
-        bullets = bullets.filter((bullet) => !bullet.update());
-
-        // Update power-ups
-        powerUps = powerUps.filter((powerUp) => !powerUp.update());
-
-        // Update particles
-        particles = particles.filter((particle) => !particle.update());
-
-        // Check collisions
         checkCollisions();
-
-        // Draw everything
         drawPlayer();
         enemies.forEach((enemy) => enemy.draw());
         bullets.forEach((bullet) => bullet.draw());
         powerUps.forEach((powerUp) => powerUp.draw());
         particles.forEach((particle) => particle.draw());
 
+        frameCount++;
         requestAnimationFrame(gameLoop);
       }
 
