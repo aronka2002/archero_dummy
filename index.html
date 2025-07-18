@@ -110,24 +110,27 @@
         border-radius: 8px;
       }
 
-      #mobileControls {
+      #joystickBase {
         position: absolute;
-        bottom: 20px;
-        right: 20px;
-        display: flex;
-        flex-wrap: wrap;
         width: 100px;
-        gap: 5px;
-        z-index: 10;
+        height: 100px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 2px solid #4a90e2;
+        border-radius: 50%;
+        display: none;
+        z-index: 99;
+        pointer-events: none;
       }
-      #mobileControls button {
-        width: 45px;
-        height: 45px;
-        font-size: 20px;
-        border: none;
+
+      #joystickStick {
+        width: 40px;
+        height: 40px;
         background: #4a90e2;
-        color: white;
-        border-radius: 10px;
+        border-radius: 50%;
+        position: absolute;
+        top: 30px;
+        left: 30px;
+        pointer-events: none;
       }
     </style>
 
@@ -151,13 +154,6 @@
         <div class="health-fill" id="healthFill"></div>
       </div>
 
-      <div id="mobileControls">
-        <button onclick="moveUp()">▲</button>
-        <button onclick="moveLeft()">◀</button>
-        <button onclick="moveDown()">▼</button>
-        <button onclick="moveRight()">▶</button>
-      </div>
-
       <div id="instructions">
         WASD or Arrow Keys: Move | Auto-shoot when enemies nearby | Survive and
         level up!
@@ -169,6 +165,10 @@
         <p>Level Reached: <span id="finalLevel">1</span></p>
         <p>High Score: <span id="highScore">0</span></p>
         <button id="restartBtn">Play Again</button>
+      </div>
+
+      <div id="joystickBase">
+        <div id="joystickStick"></div>
       </div>
     </div>
 
@@ -233,6 +233,72 @@
         "keyup",
         (e) => (keys[e.key.toLowerCase()] = false)
       );
+      const joystickBase = document.getElementById("joystickBase");
+      const joystickStick = document.getElementById("joystickStick");
+
+      let joystick = {
+        active: false,
+        startX: 0,
+        startY: 0,
+        currentX: 0,
+        currentY: 0,
+        threshold: 10,
+        inputX: 0,
+        inputY: 0,
+      };
+
+      const gameContainer = document.getElementById("gameContainer");
+
+      gameContainer.addEventListener("touchstart", (e) => {
+        const touch = e.touches[0];
+        joystick.active = true;
+
+        // Calculate position relative to gameContainer
+        const rect = gameContainer.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        joystick.startX = x;
+        joystick.startY = y;
+
+        joystickBase.style.left = `${x - 50}px`;
+        joystickBase.style.top = `${y - 50}px`;
+        joystickBase.style.display = "block";
+      });
+
+      gameContainer.addEventListener("touchmove", (e) => {
+        if (!joystick.active) return;
+        const touch = e.touches[0];
+        const rect = gameContainer.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        const dx = x - joystick.startX;
+        const dy = y - joystick.startY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const maxDistance = 40;
+
+        let limitedX = dx;
+        let limitedY = dy;
+        if (distance > maxDistance) {
+          limitedX = (dx / distance) * maxDistance;
+          limitedY = (dy / distance) * maxDistance;
+        }
+
+        joystickStick.style.transform = `translate(${limitedX}px, ${limitedY}px)`;
+
+        // Normalize input
+        joystick.inputX = limitedX / maxDistance;
+        joystick.inputY = limitedY / maxDistance;
+      });
+
+      gameContainer.addEventListener("touchend", () => {
+        joystick.active = false;
+        joystick.inputX = 0;
+        joystick.inputY = 0;
+        joystickStick.style.transform = "translate(0, 0)";
+        joystickBase.style.display = "none";
+      });
 
       // Enemy class
       class Enemy {
@@ -554,23 +620,6 @@
       window.addEventListener("resize", resizeCanvas);
       resizeCanvas();
 
-      function moveUp() {
-        keys["arrowup"] = true;
-        setTimeout(() => (keys["arrowup"] = false), 100);
-      }
-      function moveDown() {
-        keys["arrowdown"] = true;
-        setTimeout(() => (keys["arrowdown"] = false), 100);
-      }
-      function moveLeft() {
-        keys["arrowleft"] = true;
-        setTimeout(() => (keys["arrowleft"] = false), 100);
-      }
-      function moveRight() {
-        keys["arrowright"] = true;
-        setTimeout(() => (keys["arrowright"] = false), 100);
-      }
-
       function playSound(id) {
         const sound = document.getElementById(id);
         if (sound) {
@@ -597,10 +646,18 @@
 
       function updatePlayer() {
         // Movement
-        if (keys["w"] || keys["arrowup"]) player.y -= player.speed;
-        if (keys["s"] || keys["arrowdown"]) player.y += player.speed;
-        if (keys["a"] || keys["arrowleft"]) player.x -= player.speed;
-        if (keys["d"] || keys["arrowright"]) player.x += player.speed;
+        let moveX = joystick.inputX || 0;
+        let moveY = joystick.inputY || 0;
+
+        if (!joystick.active) {
+          if (keys["w"] || keys["arrowup"]) moveY = -1;
+          if (keys["s"] || keys["arrowdown"]) moveY = 1;
+          if (keys["a"] || keys["arrowleft"]) moveX = -1;
+          if (keys["d"] || keys["arrowright"]) moveX = 1;
+        }
+
+        player.x += moveX * player.speed;
+        player.y += moveY * player.speed;
 
         // Keep player in bounds
         player.x = Math.max(15, Math.min(canvas.width - 15, player.x));
@@ -981,6 +1038,41 @@
 
       // Start game
       gameLoop();
+
+      window.onload = () => {
+        if (/Mobi|Android/i.test(navigator.userAgent)) {
+          joystickBase.style.display = "block";
+        }
+      };
+
+      let audioUnlocked = false;
+
+      function unlockAudio() {
+        if (audioUnlocked) return;
+        audioUnlocked = true;
+
+        // Attempt to unlock all sounds
+        const ids = ["shootSound", "hitSound", "powerupSound", "deathSound"];
+        ids.forEach((id) => {
+          const audio = document.getElementById(id);
+          if (audio) {
+            audio
+              .play()
+              .then(() => {
+                audio.pause();
+                audio.currentTime = 0;
+              })
+              .catch(() => {
+                // silently ignore autoplay errors
+              });
+          }
+        });
+      }
+
+      // Trigger unlock on first interaction
+      ["mousedown", "touchstart", "keydown"].forEach((event) => {
+        window.addEventListener(event, unlockAudio, { once: true });
+      });
     </script>
   </body>
 </html>
