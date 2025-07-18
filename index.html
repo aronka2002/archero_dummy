@@ -833,25 +833,29 @@
       }
 
       function spawnEnemy() {
+        const scale = window.devicePixelRatio || 1;
+        const width = canvas.width / scale;
+        const height = canvas.height / scale;
+
         let x, y;
         const side = Math.floor(Math.random() * 4);
 
         switch (side) {
           case 0: // Left
             x = -25;
-            y = Math.random() * canvas.height;
+            y = Math.random() * height;
             break;
           case 1: // Right
-            x = canvas.width + 25;
-            y = Math.random() * canvas.height;
+            x = width + 25;
+            y = Math.random() * height;
             break;
           case 2: // Top
-            x = Math.random() * canvas.width;
+            x = Math.random() * width;
             y = -25;
             break;
           case 3: // Bottom
-            x = Math.random() * canvas.width;
-            y = canvas.height + 25;
+            x = Math.random() * width;
+            y = height + 25;
             break;
         }
 
@@ -957,8 +961,9 @@
         // Spawn power-ups occasionally
         let powerupcheckcount = window.innerWidth < 768 ? 0.001 : 0.003;
         if (Math.random() < powerupcheckcount) {
-          const x = Math.random() * (canvas.width - 100) + 50;
-          const y = Math.random() * (canvas.height - 100) + 50;
+          const rect = canvas.getBoundingClientRect();
+          const x = Math.random() * (rect.width - 100) + 50;
+          const y = Math.random() * (rect.height - 100) + 50;
           spawnPowerUp(x, y);
         }
 
@@ -971,10 +976,23 @@
           createParticles(player.x, player.y, "#00ff00", 10);
 
           // Guaranteed power-up on level up
-          spawnPowerUp(
-            player.x + (Math.random() - 0.5) * 100,
-            player.y + (Math.random() - 0.5) * 100
+          const offsetX = (Math.random() - 0.5) * 100;
+          const offsetY = (Math.random() - 0.5) * 100;
+
+          const rect = canvas.getBoundingClientRect();
+          const scaleX = canvas.width / rect.width;
+          const scaleY = canvas.height / rect.height;
+
+          const newX = Math.max(
+            20,
+            Math.min(canvas.width - 20, player.x + offsetX * scaleX)
           );
+          const newY = Math.max(
+            20,
+            Math.min(canvas.height - 20, player.y + offsetY * scaleY)
+          );
+
+          spawnPowerUp(newX, newY);
         }
 
         // Update UI
@@ -1096,20 +1114,27 @@
         if (audioUnlocked) return;
         audioUnlocked = true;
 
-        // Attempt to unlock all sounds
         const ids = ["shootSound", "hitSound", "powerupSound", "deathSound"];
+
         ids.forEach((id) => {
           const audio = document.getElementById(id);
           if (audio) {
-            audio
-              .play()
-              .then(() => {
-                audio.pause();
-                audio.currentTime = 0;
-              })
-              .catch(() => {
-                // silently ignore autoplay errors
-              });
+            try {
+              // Create a silent unlock by playing, then pausing
+              const playPromise = audio.play();
+              if (playPromise !== undefined) {
+                playPromise
+                  .then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                  })
+                  .catch(() => {
+                    // Fail silently
+                  });
+              }
+            } catch (e) {
+              // Fail silently
+            }
           }
         });
       }
