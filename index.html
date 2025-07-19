@@ -137,6 +137,21 @@
         left: 30px;
         pointer-events: none;
       }
+
+      #leaderboard {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background-color: rgba(0, 0, 0, 0.3); /* translucent black */
+        padding: 10px 15px;
+        border-radius: 10px;
+        color: white;
+        font-family: "Segoe UI", sans-serif;
+        font-size: 14px;
+        max-width: 200px;
+        text-align: left;
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
+      }
     </style>
 
     <audio id="shootSound" src="shoot.mp3" preload="auto"></audio>
@@ -154,6 +169,17 @@
         <div>Score: <span id="score">0</span></div>
         <div>High Score: <span id="hscore">0</span></div>
       </div>
+
+      <div
+        id="leaderboard"
+        style="
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          color: white;
+          font-family: sans-serif;
+        "
+      ></div>
 
       <div class="health-bar">
         <div class="health-fill" id="healthFill"></div>
@@ -390,6 +416,25 @@
         }
       }
 
+      class FastEnemy extends Enemy {
+        constructor(x, y) {
+          super(x, y);
+          this.speed += 2;
+          this.health = 1;
+          this.color = "#ff3e3e";
+        }
+      }
+
+      class BossEnemy extends Enemy {
+        constructor(x, y) {
+          super(x, y);
+          this.radius = 50;
+          this.color = "#b300ff";
+          this.health = 20 + game.level * 2; // Scale with level
+          this.speed = 0.5 + game.level * 0.05;
+        }
+      }
+
       // PowerUp class
       class PowerUp {
         constructor(x, y) {
@@ -461,8 +506,13 @@
           const size = this.width * pulseScale;
 
           // Glow effect
-          ctx.shadowColor = this.color;
-          ctx.shadowBlur = 15;
+          if (window.innerWidth >= 768) {
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 15;
+          } else {
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 5;
+          }
 
           // Background circle
           ctx.fillStyle = this.color + "40";
@@ -693,7 +743,9 @@
         // Auto-shoot at nearest enemy with multi-shot
         if (
           enemies.length > 0 &&
-          Date.now() - player.lastShot > player.shootCooldown
+          Date.now() - player.lastShot > player.shootCooldown &&
+          moveX === 0 &&
+          moveY === 0
         ) {
           let nearest = enemies[0];
           let minDist = Infinity;
@@ -839,27 +891,34 @@
 
         let x, y;
         const side = Math.floor(Math.random() * 4);
-
         switch (side) {
-          case 0: // Left
+          case 0:
             x = -25;
             y = Math.random() * height;
             break;
-          case 1: // Right
+          case 1:
             x = width + 25;
             y = Math.random() * height;
             break;
-          case 2: // Top
+          case 2:
             x = Math.random() * width;
             y = -25;
             break;
-          case 3: // Bottom
+          case 3:
             x = Math.random() * width;
             y = height + 25;
             break;
         }
 
-        enemies.push(new Enemy(x, y));
+        // Spawn different types based on level
+        let enemy;
+        if (game.level >= 5 && Math.random() < 0.3) {
+          enemy = new FastEnemy(x, y);
+        } else {
+          enemy = new Enemy(x, y);
+        }
+
+        enemies.push(enemy);
       }
 
       function checkCollisions() {
@@ -949,6 +1008,12 @@
         healthFill.style.width = (player.health / player.maxHealth) * 100 + "%";
       }
 
+      function spawnBoss() {
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        enemies.push(new BossEnemy(x, y));
+      }
+
       function updateGame() {
         // Update power-up timers
         updatePowerUpTimers();
@@ -993,6 +1058,10 @@
           );
 
           spawnPowerUp(newX, newY);
+
+          if (game.level % 5 === 0) {
+            spawnBoss();
+          }
         }
 
         // Update UI
@@ -1012,21 +1081,19 @@
       function gameLoop() {
         if (!game.running) return;
 
+        if (window.innerWidth < 768 && frameCount % 2 !== 0) {
+          frameCount++;
+          requestAnimationFrame(gameLoop);
+          return;
+        }
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         updatePlayer();
         updateGame();
-
-        // Only update heavy stuff every 2 frames on mobile
-        if (frameCount % 2 === 0 && window.innerWidth < 768) {
-          enemies.forEach((enemy) => enemy.update());
-          bullets = bullets.filter((bullet) => !bullet.update());
-          particles = particles.filter((p) => !p.update());
-        } else {
-          enemies.forEach((enemy) => enemy.update());
-          bullets = bullets.filter((bullet) => !bullet.update());
-          particles = particles.filter((p) => !p.update());
-        }
+        enemies.forEach((enemy) => enemy.update());
+        bullets = bullets.filter((bullet) => !bullet.update());
+        particles = particles.filter((p) => !p.update());
 
         checkCollisions();
         drawPlayer();
@@ -1054,6 +1121,23 @@
 
         gameOverEl.style.display = "block";
         playSound("deathSound");
+
+        setTimeout(() => {
+          const name =
+            prompt("Enter your name for the leaderboard:") || "Anonymous";
+          const entry = { name, score: game.score, level: game.level };
+          const leaderboard = JSON.parse(
+            localStorage.getItem("leaderboard") || "[]"
+          );
+
+          leaderboard.push(entry);
+          leaderboard.sort((a, b) => b.score - a.score);
+          localStorage.setItem(
+            "leaderboard",
+            JSON.stringify(leaderboard.slice(0, 3))
+          );
+          showLeaderboard();
+        }, 500);
       }
 
       function restartGame() {
@@ -1102,7 +1186,21 @@
       // Start game
       gameLoop();
 
+      function showLeaderboard() {
+        const leaderboard = JSON.parse(
+          localStorage.getItem("leaderboard") || "[]"
+        );
+        const lbDiv = document.getElementById("leaderboard");
+        lbDiv.innerHTML =
+          "<h3>🏆 Leaderboard</h3>" +
+          leaderboard
+            .slice(0, 3)
+            .map((e, i) => `<div>${i + 1}. ${e.name} - ${e.score}</div>`)
+            .join("");
+      }
+
       window.onload = () => {
+        showLeaderboard();
         if (/Mobi|Android/i.test(navigator.userAgent)) {
           joystickBase.style.display = "block";
         }
